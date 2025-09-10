@@ -1,65 +1,170 @@
-# 🔋 BESS Arbitrage Strategy Simulation
+# 🔋 BESS Arbitrage Strategy Simulation (GB, Elexon)
 
-This project simulates and benchmarks multiple trading strategies for a utility-scale Battery Energy Storage System (BESS) operating in the UK electricity market. It uses real market data fetched from the Elexon API to model profitability and explores the trade-offs between simple heuristics, perfect-foresight optimization, and advanced risk management.
+This project simulates and benchmarks trading strategies for a utility-scale **Battery Energy Storage System (BESS)** in Great Britain. It pulls real **Elexon System Price** data, builds a simple **Day-Ahead (DA) proxy** price, and runs four strategy “sessions”:
 
-The core objective is to answer the question: **"What is the most profitable and realistic way to operate a large battery in a volatile energy market?"**
+- **A**: rule-based physics simulation (baseline)
+- **B**: **linear program** with perfect foresight on DA
+- **C**: **DA + BM** co-allocation heuristic with physical safety
+- **D**: **CVaR** risk-aware optimisation over **Monte Carlo** price scenarios
 
-
-
----
-## The Problem: Grid Volatility & The BESS Opportunity
-
-Modern electricity grids experience significant price volatility. Factors like the intermittent nature of renewable energy (wind/solar), demand fluctuations, and generator outages cause electricity prices to swing dramatically throughout the day.
-
-Battery Energy Storage Systems (BESS) are critical assets that can stabilize the grid and profit from this volatility. The fundamental business case is simple **arbitrage**:
-1.  **Charge** the battery when electricity is cheap (low demand, high renewable generation).
-2.  **Discharge** (sell) the electricity back to the grid when it is expensive (high demand, low generation).
-
-While the concept is simple, designing a strategy to maximize profit while respecting the battery's physical limitations (degradation, efficiency, power limits) is a complex optimization problem.
+The goal is to find **profitable** and **physically realistic** schedules and to show the trade-off between raw profit and downside risk.
 
 ---
-## The Strategies: A Hierarchy of Models
 
-This project implements four distinct strategies, each representing a different level of complexity and commercial sophistication. This allows for a robust benchmark of performance.
+## Quick view
 
-### Strategy A: The Simple Heuristic
--   **Logic:** This is a basic, rule-based model that follows a simple trigger mechanism. It calculates the 30th and 70th price percentiles for the entire period and issues buy/sell signals accordingly.
--   **Concept:** It represents a "naive" or baseline strategy that reacts to prices without any forecasting or advanced planning.
--   **Decision Making:** `IF price < 30th_percentile THEN charge`, `IF price > 70th_percentile THEN discharge`.
+- **Data**: Elexon System Price, half-hourly, **48** settlement periods per UTC day  
+- **Battery**: **50 MW / 100 MWh**, round-trip efficiency about **90%** (`η_ch = η_dis = 0.95`)  
+- **Costs**: simple throughput degradation, default **£6/MWh** (tune it)  
+- **Outputs**: CSVs, PNG plots, JSON summary (ready for a CV / portfolio)
 
-### Strategy B: The Perfect-Foresight LP Model
--   **Logic:** This model uses **Linear Programming (LP)** to calculate the absolute maximum possible profit over the entire 90-day period. It is given "perfect foresight"—complete knowledge of all future prices.
--   **Concept:** It serves as a crucial, idealized benchmark. While unachievable in reality, it defines the theoretical maximum profit (`PnL_max`) available in the market, allowing us to measure the efficiency of other, more realistic strategies.
--   **Decision Making:** Solves a constrained optimization problem to find the optimal charge/discharge schedule for every 30-minute period.
+**Example run (ninety days):**
 
-### Strategy C: The Co-allocation Heuristic
--   **Logic:** This is a more advanced rule-based model that operates in two markets simultaneously: the Day-Ahead (DA) market and the more volatile Balancing Mechanism (BM). It dynamically allocates the battery's power capacity between the two markets based on recent volatility.
--   **Concept:** It models a more commercially savvy heuristic that attempts to capture value from multiple revenue streams.
--   **Decision Making:** Uses price percentile triggers for both DA and BM markets, with physically realistic constraints to prevent simultaneous charging/discharging.
+| Strategy                       | Profit (90 days) | Notes                                                                 |
+|-------------------------------|------------------|-----------------------------------------------------------------------|
+| A — simple heuristic           | **£84,843**      | p30/p70 triggers, good baseline                                       |
+| B — DA perfect-foresight LP    | **£283,253**     | upper bound for DA under constraints, terminal SoC enforced           |
+| C — DA+BM co-allocation        | **£269,854**     | zero overlap, total cap respected; close to PF but a bit lower        |
+| D — CVaR (scenarios = 150)     | **£38,687** mean | conservative schedule with λ = 0.5 and overlap penalty                |
 
-### Strategy D: The CVaR Risk-Averse Optimizer
--   **Logic:** This is the most sophisticated model. It uses **Conditional Value at Risk (CVaR)**, a common risk metric in finance, to find a trading strategy that not only generates profit but also limits exposure to significant financial losses (downside risk).
--   **Concept:** It moves beyond simple profit maximization to model the decision-making of a risk-averse asset operator or trading firm.
--   **Decision Making:** Solves a complex optimization problem across hundreds of simulated price scenarios to find a schedule that offers the best risk-adjusted return.
+> Numbers depend on the window, the fee, and solver tolerances. Use the repo to reproduce.
 
 ---
-## Results & Analysis (90-Day Simulation)
 
-The strategies were simulated over a 90-day period using a 100 MWh / 50 MW battery model with realistic degradation costs and efficiency.
+## Why this matters
 
-| Strategy                               | 90-Day Profit (£) | Key Insight                                         |
-| -------------------------------------- | ----------------- | --------------------------------------------------- |
-| A: Simple Heuristic                    | £84,843           | Provides a baseline performance.                    |
-| B: Perfect-Foresight LP                | **£283,253** | The theoretical maximum profit (the "perfect" score). |
-| C: Co-allocation Heuristic             | £269,853          | High performance, but limited by simple rules.      |
-| D: CVaR Risk-Averse Optimizer          | £38,687           | Low profit due to an overly cautious risk penalty.    |
+Power prices move a lot during the day. A battery can **charge when cheap** and **discharge when expensive**. Doing this well needs:
 
-### 💡 Key Insights from the Results:
+- **battery physics** (power, energy, efficiency, SoC limits),
+- **market logic** (DA vs BM),
+- **good optimisation** (LP),
+- **risk control** (CVaR).
 
-1.  **Optimization Creates Massive Value:** The perfect-foresight LP model (Strategy B) generated **234% more profit** than the simple heuristic (Strategy A). This powerfully quantifies the financial value of using a mathematical optimization approach over basic reactive rules.
-
-2.  **Optimal Strategy > Better Data:** The LP model (B), which only used one price series, still outperformed the more complex co-allocation heuristic (C) which used two. This demonstrates that the *quality of the decision-making algorithm (optimization) can be more important than simply having access to more data.*
-
-3.  **Model Objectives are Critical:** The CVaR model's (Strategy D) unexpectedly low profit was a direct result of an overly severe penalty placed on a specific action in its objective function. This forced the model into an extremely conservative state, teaching a valuable lesson on how sensitive optimizers are to their defined goals. It highlights the importance of careful model tuning.
+This repo shows all of these in a clean, single file.
 
 ---
+
+## Market and data (one page)
+
+- **Settlement Periods (SPs)**: **48** half-hours per UTC day (SP=1 at 00:00, SP=48 at 23:30).
+- **System Price (BM / imbalance)**: out-turn balancing price; volatile and can be negative.
+- **DA proxy** (built from System Price):  
+  Rolling **median** over six half-hours, then an **EMA** with span “twelve”, then clip to a DA-like range. In short:
+  \[
+  \text{DA}_t = \operatorname{clip}\big(\text{EMA}_{\text{span=twelve}}(\operatorname{Med}_{6}(\text{SP}_t)),\,[-20,\,400]\big)
+  \]
+  This lets us use one public source while still having a smooth DA-style signal.
+
+---
+
+## Battery model (physics)
+
+**SoC update (time step \(\Delta t\) hours):**
+\[
+s_{t+1} = s_t + \eta_{\text{ch}}\,p^{\text{ch}}_t\,\Delta t - \frac{1}{\eta_{\text{dis}}}\,p^{\text{dis}}_t\,\Delta t
+\]
+
+**Constraints**
+- Power: \(0 \le p^{\text{ch}}_t \le P_{\max}\), \(0 \le p^{\text{dis}}_t \le P_{\max}\)
+- **Total power cap (surrogate for non-overlap)**: \(p^{\text{ch}}_t + p^{\text{dis}}_t \le P_{\max}\)
+- Energy: \(s_{\min} \le s_t \le s_{\max}\)
+- **Terminal SoC**: \(s_T = s_0\) (no “free” energy from the end)
+
+**Degradation (simple throughput model)**
+\[
+C^{\text{deg}} = \sum_t c_{\text{deg}}\,(p^{\text{ch}}_t + p^{\text{dis}}_t)\,\Delta t \quad [£]
+\]
+
+**Profit**
+\[
+\text{P\&L} = \sum_t \pi_t\,(p^{\text{dis}}_t - p^{\text{ch}}_t)\,\Delta t - C^{\text{deg}}
+\]
+where \(\pi_t\) is the price used by the strategy.
+
+**KPIs**
+- **Cycles** \(= \dfrac{\text{throughput}}{2E_{\max}}\), where throughput \(=\sum_t (p^{\text{ch}}_t + p^{\text{dis}}_t)\Delta t\)
+- **Utilisation** \(= \text{avg}(|\text{power}|) / P_{\max}\)
+- **P\&L per MWh moved** (helps sanity-check spreads vs costs)
+
+**Defaults used**
+- \(E_{\max} = 100\) MWh, \(P_{\max} = 50\) MW
+- \(\eta_{\text{ch}} = \eta_{\text{dis}} = 0.95\), so round-trip about \(0.90\)
+- \(\Delta t = 0.5\) h, \(s_0 = 50\), \(s_{\min} = 5\), \(s_{\max} = 95\)
+- \(c_{\text{deg}} = 6\) £/MWh (tune as you like)
+
+---
+
+## Four strategy sessions
+
+### Session A — rule-based physics (baseline)
+
+- **Idea**: charge if price < p30, discharge if price > p70, else do nothing.
+- **Why**: very clear and fast; good to debug SoC, caps, and units.
+- **P\&L**: uses the formula above with the chosen price series.
+
+### Session B — perfect-foresight LP (DA only)
+
+- **Variables**: \(p^{\text{ch}}_t, p^{\text{dis}}_t, s_t\)
+- **Maximise**
+  \[
+  \sum_t \text{DA}_t\,(p^{\text{dis}}_t - p^{\text{ch}}_t)\,\Delta t \;-\; c_{\text{deg}}\sum_t (p^{\text{ch}}_t + p^{\text{dis}}_t)\,\Delta t
+  \]
+- **Subject to**: power caps, **total power cap** \(p^{\text{ch}}_t + p^{\text{dis}}_t \le P_{\max}\), SoC bounds, **SoC dynamics**, **terminal SoC**
+- **Why**: this gives a **convex LP** with a strong global optimum. It is a clean upper bound for DA given the constraints.
+
+> Solvers used by cvxpy: ECOS, OSQP, SCS, Clarabel (fallback as needed).  
+> OSQP might report `optimal_inaccurate`; that is common for QP-like forms and is usually fine.
+
+### Session C — DA + BM co-allocation (heuristic, physically safe)
+
+- **Split power** each period: reserve \(a^{\text{DA}}_t \in [0,1]\) for DA, and \(1 - a^{\text{DA}}_t\) for BM.  
+  \(a^{\text{DA}}_t\) comes from recent spread volatility \(|\text{BM} - \text{DA}|\) (more vol ⇒ more BM).
+- Apply **threshold rules** on DA and BM to propose charge/discharge per market.
+- **Safety guards**
+  - **No buy & sell in the same period**: if both sides trigger, keep the more valuable side and drop the other
+  - **Total power cap across both markets**:
+    \[
+    (p^{\text{ch}}_{\text{DA}} + p^{\text{ch}}_{\text{BM}}) + (p^{\text{dis}}_{\text{DA}} + p^{\text{dis}}_{\text{BM}}) \le P_{\max}
+    \]
+- **Why**: easy to explain, fast, and safe. You can later upgrade this to a deterministic LP co-optimisation across both prices.
+
+### Session D — risk-aware optimisation (CVaR via Monte Carlo)
+
+- **Scenarios**: simulate DA and BM price paths with a simple **AR(1)** on log-returns (or shifted logs).  
+  Returns:
+  \[
+  r_t = \mu + \phi r_{t-1} + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0,\sigma^2)
+  \]
+  Then exponentiate back and clip to guard rails.
+- **One schedule** across all scenarios: same decision vectors for all paths.
+- **Loss per scenario**: \(L_s = -\Pi_s\), where \(\Pi_s\) is profit in scenario \(s\).
+
+**CVaR** (Conditional Value at Risk) with level \(\beta\)  
+Think of it as the **average of the worst** \((1-\beta)\) fraction of losses. For \(\beta = 0.95\), it is the mean of the worst five percent outcomes.
+
+**Rockafellar–Uryasev form** (convex and solver-friendly):
+- Variables: \(\alpha\) (VaR-like) and slacks \(z_s \ge 0\)
+- Constraints: \(z_s \ge L_s - \alpha\) for each scenario
+- CVaR:
+  \[
+  \operatorname{CVaR}_\beta = \alpha + \frac{1}{(1-\beta)S} \sum_s z_s
+  \]
+
+**Objective (risk vs return)**:
+\[
+\min\ (1-\lambda)\operatorname{CVaR}_\beta \;-\; \lambda\,\mathbb{E}[\Pi] \;+\; \gamma \sum_t o_t \Delta t
+\]
+- \(\lambda\) moves the balance between return and downside risk
+- \(o_t\) is an **overlap proxy** with bounds \(o_t \le \text{total\_charge}_t\), \(o_t \le \text{total\_discharge}_t\)
+- We also enforce a **total power cap** each period
+
+This stays **convex** and works well in cvxpy.
+
+---
+
+## How to run
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+python battery_arbitrage.py
