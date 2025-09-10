@@ -63,19 +63,3 @@ The strategies were simulated over a 90-day period using a 100 MWh / 50 MW batte
 3.  **Model Objectives are Critical:** The CVaR model's (Strategy D) unexpectedly low profit was a direct result of an overly severe penalty placed on a specific action in its objective function. This forced the model into an extremely conservative state, teaching a valuable lesson on how sensitive optimizers are to their defined goals. It highlights the importance of careful model tuning.
 
 ---
-## How to Run the Simulation
-
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/YourUsername/BESS-Arbitrage-Simulation.git](https://github.com/YourUsername/BESS-Arbitrage-Simulation.git)
-    cd BESS-Arbitrage-Simulation
-    ```
-2.  **Install dependencies:**
-    ```bash
-    pip install pandas numpy requests matplotlib cvxpy
-    ```
-3.  **Execute the script:**
-    ```bash
-    python arbitrage_simulation.py
-    ```
-4.  **Check the outputs:** The script will generate detailed CSVs, plots, and a summary JSON in a new `reports/` folder.
